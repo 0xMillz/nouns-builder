@@ -1,6 +1,9 @@
 import { Box, Flex, Paragraph, atoms } from '@zoralabs/zord'
+import { useEffect } from 'hono/jsx'
+import { toLower } from 'lodash'
 import Image from 'next/image'
 import React, { ReactNode } from 'react'
+import { useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import rehypeRaw from 'rehype-raw'
 import rehypeSanitize from 'rehype-sanitize'
@@ -12,10 +15,12 @@ import { SDK } from 'src/data/subgraph/client'
 import { Proposal } from 'src/data/subgraph/requests/proposalQuery'
 import { OrderDirection, Token_OrderBy } from 'src/data/subgraph/sdk.generated'
 import { useEnsData } from 'src/hooks/useEnsData'
+import { getEscrowBundler } from 'src/modules/create-proposal/components/TransactionForm/Escrow/EscrowUtils'
 import { useChainStore } from 'src/stores/useChainStore'
 import { propPageWrapper } from 'src/styles/Proposals.css'
 
 import { DecodedTransactions } from './DecodedTransactions'
+import { MilestoneDetails } from './MilestoneDetails'
 import { proposalDescription } from './ProposalDescription.css'
 
 const Section = ({ children, title }: { children: ReactNode; title: string }) => (
@@ -32,13 +37,28 @@ type ProposalDescriptionProps = {
   collection: string
 }
 
+interface DecodedArguments {
+  name: string
+  value: string
+  type: string
+}
+
+export interface DecodedTransaction {
+  [key: string]: DecodedArguments
+}
+
 export const ProposalDescription: React.FC<ProposalDescriptionProps> = ({
   proposal,
   collection,
 }) => {
-  const { description, proposer, calldatas, values, targets } = proposal
+  const { description, proposer, calldatas, values, targets, executionTransactionHash } =
+    proposal
   const { displayName } = useEnsData(proposer)
   const chain = useChainStore((x) => x.chain)
+
+  const [decodedTxnData, setDecodedTxnData] = useState<DecodedTransaction>()
+
+  const isEscrow = targets.includes(toLower(getEscrowBundler(chain.id)))
 
   const { data: tokenImage, error } = useSWR(
     !!collection && !!proposer
@@ -56,6 +76,10 @@ export const ProposalDescription: React.FC<ProposalDescriptionProps> = ({
     { revalidateOnFocus: false }
   )
 
+  useEffect(() => {
+    setDecodedTxnData(decodedTxnData)
+  }, [decodedTxnData])
+
   return (
     <Flex className={propPageWrapper}>
       <Flex direction={'column'} mt={{ '@initial': 'x6', '@768': 'x13' }}>
@@ -72,6 +96,14 @@ export const ProposalDescription: React.FC<ProposalDescriptionProps> = ({
             )}
           </Paragraph>
         </Section>
+        {isEscrow && decodedTxnData && (
+          <Section title="Escrow Milestones">
+            <MilestoneDetails
+              decodedTxnData={decodedTxnData}
+              executionTransactionHash={executionTransactionHash}
+            />
+          </Section>
+        )}
 
         <Section title="Proposer">
           <Flex direction={'row'} placeItems={'center'}>
@@ -100,7 +132,12 @@ export const ProposalDescription: React.FC<ProposalDescriptionProps> = ({
         </Section>
 
         <Section title="Proposed Transactions">
-          <DecodedTransactions targets={targets} calldatas={calldatas} values={values} />
+          <DecodedTransactions
+            targets={targets}
+            calldatas={calldatas}
+            values={values}
+            setDecodedTxnData={setDecodedTxnData}
+          />
         </Section>
       </Flex>
     </Flex>
